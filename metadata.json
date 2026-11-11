@@ -1,0 +1,6 @@
+{
+  "name": "Retro State RS",
+  "description": "Servicio técnico especializado en consolas retro y arcade. Diagnóstico, reparación, restauración, modding, venta y finanzas para gamers clásicos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="backup_cache" path="backups/" />
+    <files-path name="backup_files" path="backups/" />
+    <cache-path name="pdf_cache" path="quotes/" />
+    <files-path name="intake_photos" path="photos/" />
+    <files-path name="signatures" path="signatures/" />
+    <cache-path name="all_cache" path="." />
+</paths>
