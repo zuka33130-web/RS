@@ -1,7 +1,6 @@
 package com.example.ui.settings
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -12,6 +11,8 @@ import com.example.data.repository.WorkshopRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class SettingsUiState(
@@ -31,21 +32,22 @@ class SettingsViewModel(private val repository: WorkshopRepository) : ViewModel(
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
-        loadCounts()
-    }
-
-    private fun loadCounts() {
         viewModelScope.launch {
-            val orders = repository.getAllOrdersSync().size
-            val txs = repository.getAllTransactionsSync().size
-            val tasks = repository.getAllTasksSync().size
-            val supplies = repository.getAllSuppliesSync().size
-            _uiState.value = _uiState.value.copy(
-                ordersCount = orders,
-                transactionsCount = txs,
-                tasksCount = tasks,
-                suppliesCount = supplies
-            )
+            combine(
+                repository.allWorkOrdersWithClient,
+                repository.allTransactions,
+                repository.allTasks,
+                repository.allSupplies
+            ) { orders, transactions, tasks, supplies ->
+                intArrayOf(orders.size, transactions.size, tasks.size, supplies.size)
+            }.collect { counts ->
+                _uiState.value = _uiState.value.copy(
+                    ordersCount = counts[0],
+                    transactionsCount = counts[1],
+                    tasksCount = counts[2],
+                    suppliesCount = counts[3]
+                )
+            }
         }
     }
 
@@ -60,7 +62,6 @@ class SettingsViewModel(private val repository: WorkshopRepository) : ViewModel(
                         successMessage = "¡Copia de seguridad exportada con éxito!",
                         lastBackupStats = stats
                     )
-                    loadCounts()
                 },
                 onFailure = { err ->
                     _uiState.value = _uiState.value.copy(
@@ -83,7 +84,6 @@ class SettingsViewModel(private val repository: WorkshopRepository) : ViewModel(
                         successMessage = "¡Base de datos restaurada correctamente!",
                         lastBackupStats = stats
                     )
-                    loadCounts()
                 },
                 onFailure = { err ->
                     _uiState.value = _uiState.value.copy(
@@ -95,8 +95,32 @@ class SettingsViewModel(private val repository: WorkshopRepository) : ViewModel(
         }
     }
 
-    suspend fun prepareCloudShareIntent(context: Context): Intent {
-        return BackupManager.createShareBackupIntent(context, repository)
+    fun shareCloudBackup(context: Context) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null, successMessage = null)
+            runCatching { BackupManager.createShareBackupIntent(context, repository) }
+                .onSuccess { intent ->
+                    runCatching { context.startActivity(intent) }
+                        .onSuccess {
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                successMessage = "Copia de seguridad generada y lista para compartir."
+                            )
+                        }
+                        .onFailure { err ->
+                            _uiState.value = _uiState.value.copy(
+                                isLoading = false,
+                                errorMessage = "No se encontró una aplicación para compartir: ${err.localizedMessage}"
+                            )
+                        }
+                }
+                .onFailure { err ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = "Error al generar la copia: ${err.localizedMessage}"
+                    )
+                }
+        }
     }
 
     fun clearMessages() {

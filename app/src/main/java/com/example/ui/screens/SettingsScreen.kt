@@ -461,11 +461,7 @@ fun SettingsScreen(
                     accentColor = PixelGreen1UP,
                     buttonText = "Compartir / Subir a Drive",
                     testTag = "btn_share_cloud_backup",
-                    onClick = {
-                        viewModel.prepareCloudShareIntent(context) { chooserIntent ->
-                            context.startActivity(chooserIntent)
-                        }
-                    }
+                    onClick = { viewModel.shareCloudBackup(context) }
                 )
             }
         }

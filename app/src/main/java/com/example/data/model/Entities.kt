@@ -1,13 +1,17 @@
 package com.example.data.model
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 
 /**
  * Transacción financiera (Mercado Pago style)
  */
-@Entity(tableName = "financial_transactions")
+@Entity(
+    tableName = "financial_transactions",
+    indices = [Index(value = ["relatedOrderId"], unique = true)]
+)
 data class FinancialTransaction(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val type: String, // "INCOME" or "EXPENSE"

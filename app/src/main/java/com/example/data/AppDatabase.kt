@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.room.withTransaction
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.dao.ClientDao
 import com.example.data.dao.FinancialTransactionDao
@@ -32,7 +34,7 @@ import kotlinx.coroutines.launch
         ClientEntity::class,
         WorkOrderEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -44,6 +46,23 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun workOrderDao(): WorkOrderDao
 
     companion object {
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Las versiones anteriores podían crear más de un cobro para una orden.
+                db.execSQL(
+                    """DELETE FROM financial_transactions
+                       WHERE relatedOrderId IS NOT NULL AND id NOT IN (
+                           SELECT MIN(id) FROM financial_transactions
+                           WHERE relatedOrderId IS NOT NULL GROUP BY relatedOrderId
+                       )""".trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_financial_transactions_relatedOrderId " +
+                        "ON financial_transactions(relatedOrderId)"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -54,7 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "retro_state_rs_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_5_6)
                     .addCallback(DatabaseCallback(scope))
                     .build()
                 INSTANCE = instance
@@ -86,7 +105,7 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        suspend fun seedRetroData(database: AppDatabase) {
+        suspend fun seedRetroData(database: AppDatabase) = database.withTransaction {
             val transactionDao = database.financialTransactionDao()
             val taskDao = database.workshopTaskDao()
             val supplyDao = database.supplyItemDao()

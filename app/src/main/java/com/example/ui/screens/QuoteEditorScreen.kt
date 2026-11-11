@@ -425,7 +425,7 @@ fun QuoteEditorScreen(
                     onValueChange = { finalCostInput = it },
                     label = { Text("Costo Final ($) *") },
                     placeholder = { Text("ej. 35000") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = PixelGreen1UP,
@@ -454,7 +454,7 @@ fun QuoteEditorScreen(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "\"Presupuesto válido sujeto a modificación según el precio actual de repuestos. Todas las reparaciones tienen garantía de 30 días.\"",
+                    text = "\"Presupuesto válido sujeto a modificación según el precio actual de repuestos. Todas las reparaciones tienen garantía de ${initialOrder?.warrantyDays ?: 30} días.\"",
                     color = RetroMuted,
                     fontSize = 11.sp,
                     lineHeight = 15.sp
@@ -463,7 +463,7 @@ fun QuoteEditorScreen(
         }
 
         // --- Action Buttons (Generate PDF & Share Intent) ---
-        val costValue = finalCostInput.toDoubleOrNull() ?: 0.0
+        val costValue = finalCostInput.replace(',', '.').toDoubleOrNull() ?: 0.0
         val isFormValid = clientName.isNotBlank() && deviceModel.isNotBlank() && repairDetail.isNotBlank() && costValue > 0
 
         Column(
@@ -483,12 +483,21 @@ fun QuoteEditorScreen(
                             reportedFault = reportedFault.trim(),
                             repairDetail = repairDetail.trim(),
                             finalCost = costValue,
-                            quoteCode = quoteCode.trim()
+                            quoteCode = quoteCode.trim(),
+                            warrantyDays = initialOrder?.warrantyDays ?: 30
                         )
-                        val pdfFile = PdfGeneratorManager.createQuotePdf(context, pdfData)
-                        generatedPdfFile = pdfFile
-                        Toast.makeText(context, "¡Presupuesto PDF generado con éxito!", Toast.LENGTH_SHORT).show()
-                        PdfGeneratorManager.sharePdfIntent(context, pdfFile, pdfData.quoteCode)
+                        runCatching { PdfGeneratorManager.createQuotePdf(context, pdfData) }
+                            .onSuccess { pdfFile ->
+                                generatedPdfFile = pdfFile
+                                Toast.makeText(context, "¡Presupuesto PDF generado con éxito!", Toast.LENGTH_SHORT).show()
+                                runCatching { PdfGeneratorManager.sharePdfIntent(context, pdfFile, pdfData.quoteCode) }
+                                    .onFailure {
+                                        Toast.makeText(context, "El PDF se generó, pero no hay una app para compartirlo.", Toast.LENGTH_LONG).show()
+                                    }
+                            }
+                            .onFailure {
+                                Toast.makeText(context, "No se pudo generar el PDF. Intentalo nuevamente.", Toast.LENGTH_LONG).show()
+                            }
                     }
                 },
                 enabled = isFormValid,

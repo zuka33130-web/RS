@@ -4,15 +4,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.example.data.model.ClientEntity
 import com.example.data.model.FinancialTransaction
 import com.example.data.model.SupplyItem
+import com.example.data.model.TransactionType
 import com.example.data.model.WorkOrderEntity
+import com.example.data.model.WorkOrderStatus
 import com.example.data.model.WorkshopTask
 import com.example.data.repository.WorkshopRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -20,6 +19,10 @@ import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 data class BackupStats(
     val ordersCount: Int,
@@ -32,253 +35,316 @@ data class BackupStats(
 object BackupManager {
 
     private const val APP_IDENTIFIER = "Retro State RS"
-    private const val BACKUP_VERSION = 1
+    private const val BACKUP_VERSION = 2
 
-    /**
-     * Serializa toda la base de datos a una cadena JSON estructurada.
-     */
+    /** Serializa clientes, órdenes y el resto de los datos sin perder sus relaciones. */
     suspend fun generateBackupJson(repository: WorkshopRepository): String = withContext(Dispatchers.IO) {
+        val clients = repository.getAllClientsSync()
         val orders = repository.getAllOrdersSync()
         val transactions = repository.getAllTransactionsSync()
         val tasks = repository.getAllTasksSync()
         val supplies = repository.getAllSuppliesSync()
 
-        val rootJson = JSONObject().apply {
+        JSONObject().apply {
             put("app", APP_IDENTIFIER)
             put("version", BACKUP_VERSION)
             put("timestamp", System.currentTimeMillis())
 
-            // Orders
-            val ordersArray = JSONArray()
-            orders.forEach { o ->
-                val obj = JSONObject().apply {
-                    put("id", o.id)
-                    put("clientId", o.clientId)
-                    put("orderCode", o.orderCode)
-                    put("deviceModel", o.deviceModel)
-                    put("serialNumber", o.serialNumber)
-                    put("reportedFault", o.reportedFault)
-                    put("technicalDiagnosis", o.technicalDiagnosis)
-                    put("internalNotes", o.internalNotes)
-                    put("status", o.status)
-                    put("partsCost", o.partsCost)
-                    put("laborCost", o.laborCost)
-                    put("totalCost", o.totalCost)
-                    put("entryDate", o.entryDate)
-                    if (o.quotedDate != null) put("quotedDate", o.quotedDate)
-                    if (o.deliveryDate != null) put("deliveryDate", o.deliveryDate)
-                    put("warrantyDays", o.warrantyDays)
-                    put("warrantyTerms", o.warrantyTerms)
+            put("clients", JSONArray().apply {
+                clients.forEach { client ->
+                    put(JSONObject().apply {
+                        put("id", client.id)
+                        put("firstName", client.firstName)
+                        put("lastName", client.lastName)
+                        put("address", client.address)
+                        put("phone", client.phone)
+                        put("notes", client.notes)
+                        put("createdAt", client.createdAt)
+                    })
                 }
-                ordersArray.put(obj)
-            }
-            put("orders", ordersArray)
+            })
 
-            // Transactions
-            val txArray = JSONArray()
-            transactions.forEach { t ->
-                val obj = JSONObject().apply {
-                    put("id", t.id)
-                    put("type", t.type)
-                    put("amount", t.amount)
-                    put("category", t.category)
-                    put("description", t.description)
-                    put("date", t.date)
-                    if (t.relatedOrderId != null) put("relatedOrderId", t.relatedOrderId)
+            put("orders", JSONArray().apply {
+                orders.forEach { order ->
+                    put(JSONObject().apply {
+                        put("id", order.id)
+                        put("clientId", order.clientId)
+                        put("orderCode", order.orderCode)
+                        put("deviceModel", order.deviceModel)
+                        put("serialNumber", order.serialNumber)
+                        put("reportedFault", order.reportedFault)
+                        put("technicalDiagnosis", order.technicalDiagnosis)
+                        put("internalNotes", order.internalNotes)
+                        put("status", order.status)
+                        put("partsCost", order.partsCost)
+                        put("laborCost", order.laborCost)
+                        put("totalCost", order.totalCost)
+                        put("entryDate", order.entryDate)
+                        putNullable("quotedDate", order.quotedDate)
+                        putNullable("deliveryDate", order.deliveryDate)
+                        put("warrantyDays", order.warrantyDays)
+                        put("warrantyTerms", order.warrantyTerms)
+                        put("photosUris", JSONArray(order.photosUris))
+                        putNullable("signatureUri", order.signatureUri)
+                    })
                 }
-                txArray.put(obj)
-            }
-            put("transactions", txArray)
+            })
 
-            // Tasks
-            val tasksArray = JSONArray()
-            tasks.forEach { tk ->
-                val obj = JSONObject().apply {
-                    put("id", tk.id)
-                    put("title", tk.title)
-                    put("priority", tk.priority)
-                    put("isCompleted", tk.isCompleted)
-                    put("relatedConsole", tk.relatedConsole)
-                    put("createdAt", tk.createdAt)
+            put("transactions", JSONArray().apply {
+                transactions.forEach { transaction ->
+                    put(JSONObject().apply {
+                        put("id", transaction.id)
+                        put("type", transaction.type)
+                        put("amount", transaction.amount)
+                        put("category", transaction.category)
+                        put("description", transaction.description)
+                        put("date", transaction.date)
+                        putNullable("relatedOrderId", transaction.relatedOrderId)
+                    })
                 }
-                tasksArray.put(obj)
-            }
-            put("tasks", tasksArray)
+            })
 
-            // Supplies
-            val suppliesArray = JSONArray()
-            supplies.forEach { s ->
-                val obj = JSONObject().apply {
-                    put("id", s.id)
-                    put("name", s.name)
-                    put("category", s.category)
-                    put("quantity", s.quantity)
-                    put("unit", s.unit)
-                    put("isNeeded", s.isNeeded)
-                    put("estimatedPrice", s.estimatedPrice)
-                    put("supplier", s.supplier)
+            put("tasks", JSONArray().apply {
+                tasks.forEach { task ->
+                    put(JSONObject().apply {
+                        put("id", task.id)
+                        put("title", task.title)
+                        put("priority", task.priority)
+                        put("isCompleted", task.isCompleted)
+                        put("relatedConsole", task.relatedConsole)
+                        put("createdAt", task.createdAt)
+                    })
                 }
-                suppliesArray.put(obj)
-            }
-            put("supplies", suppliesArray)
-        }
+            })
 
-        rootJson.toString(2)
+            put("supplies", JSONArray().apply {
+                supplies.forEach { supply ->
+                    put(JSONObject().apply {
+                        put("id", supply.id)
+                        put("name", supply.name)
+                        put("category", supply.category)
+                        put("quantity", supply.quantity)
+                        put("unit", supply.unit)
+                        put("isNeeded", supply.isNeeded)
+                        put("estimatedPrice", supply.estimatedPrice)
+                        put("supplier", supply.supplier)
+                    })
+                }
+            })
+        }.toString(2)
     }
 
-    /**
-     * Escribe el backup en un URI seleccionado por el usuario mediante SAF (CreateDocument).
-     */
+    private fun JSONObject.putNullable(key: String, value: Any?) {
+        put(key, value ?: JSONObject.NULL)
+    }
+
     suspend fun exportBackupToUri(
         context: Context,
         repository: WorkshopRepository,
         destinationUri: Uri
     ): Result<BackupStats> = withContext(Dispatchers.IO) {
-        try {
+        runCatching {
+            val clients = repository.getAllClientsSync()
+            val orders = repository.getAllOrdersSync()
+            val transactions = repository.getAllTransactionsSync()
+            val tasks = repository.getAllTasksSync()
+            val supplies = repository.getAllSuppliesSync()
             val jsonString = generateBackupJson(repository)
-            context.contentResolver.openOutputStream(destinationUri)?.use { outputStream ->
+
+            // "wt" trunca el destino incluso en proveedores SAF que no lo hacen con "w".
+            context.contentResolver.openOutputStream(destinationUri, "wt")?.use { outputStream ->
                 OutputStreamWriter(outputStream, Charsets.UTF_8).use { writer ->
                     writer.write(jsonString)
                     writer.flush()
                 }
-            } ?: return@withContext Result.failure(Exception("No se pudo abrir el archivo de destino para escritura."))
+            } ?: error("No se pudo abrir el archivo de destino para escritura.")
 
-            val orders = repository.getAllOrdersSync().size
-            val transactions = repository.getAllTransactionsSync().size
-            val tasks = repository.getAllTasksSync().size
-            val supplies = repository.getAllSuppliesSync().size
-
-            Result.success(
-                BackupStats(
-                    ordersCount = orders,
-                    transactionsCount = transactions,
-                    tasksCount = tasks,
-                    suppliesCount = supplies,
-                    timestamp = System.currentTimeMillis()
-                )
+            BackupStats(
+                ordersCount = orders.size,
+                transactionsCount = transactions.size,
+                tasksCount = tasks.size,
+                suppliesCount = supplies.size,
+                timestamp = System.currentTimeMillis()
             )
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
-    /**
-     * Lee un archivo JSON seleccionado por el usuario mediante SAF (OpenDocument) y restaura la BD.
-     */
     suspend fun importBackupFromUri(
         context: Context,
         repository: WorkshopRepository,
         sourceUri: Uri
     ): Result<BackupStats> = withContext(Dispatchers.IO) {
-        try {
+        runCatching {
             val content = context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { reader ->
-                    reader.readText()
-                }
-            } ?: return@withContext Result.failure(Exception("No se pudo abrir el archivo para lectura."))
+                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { reader -> reader.readText() }
+            } ?: error("No se pudo abrir el archivo para lectura.")
 
-            val rootJson = JSONObject(content)
-
-            val app = rootJson.optString("app", "")
-            if (!app.contains("Retro State RS") && !app.contains("ConsoleLab") && !rootJson.has("orders")) {
-                return@withContext Result.failure(Exception("El archivo seleccionado no es una copia de seguridad válida."))
+            val root = JSONObject(content)
+            require(root.optString("app") in setOf(APP_IDENTIFIER, "ConsoleLab")) {
+                "El archivo seleccionado no es una copia de seguridad de Retro State RS."
             }
+            require(root.optInt("version", 1) in 1..BACKUP_VERSION) {
+                "La versión de esta copia de seguridad no es compatible."
+            }
+            require(root.has("orders")) { "La copia no contiene la sección de órdenes." }
 
-            // Parse Orders
-            val ordersList = mutableListOf<WorkOrderEntity>()
-            val ordersArray = rootJson.optJSONArray("orders") ?: JSONArray()
-            for (i in 0 until ordersArray.length()) {
-                val obj = ordersArray.getJSONObject(i)
-                ordersList.add(
-                    WorkOrderEntity(
-                        id = obj.optLong("id", 0L),
-                        clientId = obj.optLong("clientId", 1L),
-                        orderCode = obj.optString("orderCode", "RS-2026-0001"),
-                        deviceModel = obj.optString("deviceModel", ""),
-                        serialNumber = obj.optString("serialNumber", ""),
-                        reportedFault = obj.optString("reportedFault", ""),
-                        technicalDiagnosis = obj.optString("technicalDiagnosis", obj.optString("diagnosis", "")),
-                        internalNotes = obj.optString("internalNotes", obj.optString("notes", "")),
-                        status = obj.optString("status", "TO_CHECK"),
-                        partsCost = obj.optDouble("partsCost", obj.optDouble("estimatedCost", 0.0)),
-                        laborCost = obj.optDouble("laborCost", 0.0),
-                        totalCost = obj.optDouble("totalCost", obj.optDouble("finalPrice", 0.0)),
-                        entryDate = obj.optLong("entryDate", System.currentTimeMillis()),
-                        quotedDate = if (obj.has("quotedDate") && !obj.isNull("quotedDate")) obj.optLong("quotedDate") else null,
-                        deliveryDate = if (obj.has("deliveryDate") && !obj.isNull("deliveryDate")) obj.optLong("deliveryDate") else if (obj.has("exitDate") && !obj.isNull("exitDate")) obj.optLong("exitDate") else null,
-                        warrantyDays = obj.optInt("warrantyDays", 90)
-                    )
+            val orders = parseOrders(root.optJSONArray("orders") ?: JSONArray())
+            val clients = parseClients(root.optJSONArray("clients"), orders)
+            val transactions = parseTransactions(root.optJSONArray("transactions") ?: JSONArray())
+            val tasks = parseTasks(root.optJSONArray("tasks") ?: JSONArray())
+            val supplies = parseSupplies(root.optJSONArray("supplies") ?: JSONArray())
+
+            repository.restoreAllData(clients, orders, transactions, tasks, supplies)
+
+            BackupStats(
+                ordersCount = orders.size,
+                transactionsCount = transactions.size,
+                tasksCount = tasks.size,
+                suppliesCount = supplies.size,
+                timestamp = root.optLong("timestamp", System.currentTimeMillis())
+            )
+        }
+    }
+
+    private fun parseClients(ordersArray: JSONArray?, orders: List<WorkOrderEntity>): List<ClientEntity> {
+        val clients = mutableListOf<ClientEntity>()
+        if (ordersArray != null) {
+            for (index in 0 until ordersArray.length()) {
+                val json = ordersArray.getJSONObject(index)
+                val id = json.getLong("id")
+                require(id > 0) { "Hay un cliente con un identificador inválido." }
+                clients += ClientEntity(
+                    id = id,
+                    firstName = json.optString("firstName", "Cliente restaurado"),
+                    lastName = json.optString("lastName"),
+                    address = json.optString("address"),
+                    phone = json.optString("phone"),
+                    notes = json.optString("notes"),
+                    createdAt = json.optLong("createdAt", System.currentTimeMillis())
                 )
             }
+        }
 
-            // Parse Transactions
-            val transactionsList = mutableListOf<FinancialTransaction>()
-            val txArray = rootJson.optJSONArray("transactions") ?: JSONArray()
-            for (i in 0 until txArray.length()) {
-                val obj = txArray.getJSONObject(i)
-                transactionsList.add(
-                    FinancialTransaction(
-                        id = obj.optLong("id", 0L),
-                        type = obj.optString("type", "INCOME"),
-                        amount = obj.optDouble("amount", 0.0),
-                        category = obj.optString("category", "Otros"),
-                        description = obj.optString("description", ""),
-                        date = obj.optLong("date", System.currentTimeMillis()),
-                        relatedOrderId = if (obj.has("relatedOrderId") && !obj.isNull("relatedOrderId")) obj.optLong("relatedOrderId") else null
-                    )
-                )
-            }
+        // Las copias v1 no incluían clientes. Se crean marcadores válidos para no violar las FK.
+        val existingIds = clients.mapTo(mutableSetOf()) { it.id }
+        orders.map { it.clientId }.distinct().filter { it !in existingIds }.forEach { clientId ->
+            clients += ClientEntity(
+                id = clientId,
+                firstName = "Cliente restaurado",
+                lastName = "#$clientId",
+                notes = "Complete los datos de este cliente: la copia original no los incluía."
+            )
+        }
+        return clients
+    }
 
-            // Parse Tasks
-            val tasksList = mutableListOf<WorkshopTask>()
-            val tasksArray = rootJson.optJSONArray("tasks") ?: JSONArray()
-            for (i in 0 until tasksArray.length()) {
-                val obj = tasksArray.getJSONObject(i)
-                tasksList.add(
-                    WorkshopTask(
-                        id = obj.optLong("id", 0L),
-                        title = obj.optString("title", ""),
-                        priority = obj.optString("priority", "MEDIUM"),
-                        isCompleted = obj.optBoolean("isCompleted", false),
-                        relatedConsole = obj.optString("relatedConsole", ""),
-                        createdAt = obj.optLong("createdAt", System.currentTimeMillis())
-                    )
-                )
-            }
-
-            // Parse Supplies
-            val suppliesList = mutableListOf<SupplyItem>()
-            val suppliesArray = rootJson.optJSONArray("supplies") ?: JSONArray()
-            for (i in 0 until suppliesArray.length()) {
-                val obj = suppliesArray.getJSONObject(i)
-                suppliesList.add(
-                    SupplyItem(
-                        id = obj.optLong("id", 0L),
-                        name = obj.optString("name", ""),
-                        category = obj.optString("category", "Repuestos"),
-                        quantity = obj.optInt("quantity", 1),
-                        unit = obj.optString("unit", "u"),
-                        isNeeded = obj.optBoolean("isNeeded", true),
-                        estimatedPrice = obj.optDouble("estimatedPrice", 0.0),
-                        supplier = obj.optString("supplier", "")
-                    )
-                )
-            }
-
-            repository.restoreAllData(ordersList, transactionsList, tasksList, suppliesList)
-
-            Result.success(
-                BackupStats(
-                    ordersCount = ordersList.size,
-                    transactionsCount = transactionsList.size,
-                    tasksCount = tasksList.size,
-                    suppliesCount = suppliesList.size,
-                    timestamp = rootJson.optLong("timestamp", System.currentTimeMillis())
+    private fun parseOrders(array: JSONArray): List<WorkOrderEntity> = buildList {
+        for (index in 0 until array.length()) {
+            val json = array.getJSONObject(index)
+            val id = json.getLong("id")
+            val clientId = json.getLong("clientId")
+            val orderCode = json.getString("orderCode").trim()
+            val status = json.optString("status", WorkOrderStatus.TO_CHECK.name)
+            val partsCost = json.optDouble("partsCost", json.optDouble("estimatedCost", 0.0))
+            val laborCost = json.optDouble("laborCost", 0.0)
+            val totalCost = json.optDouble("totalCost", json.optDouble("finalPrice", partsCost + laborCost))
+            require(id > 0 && clientId > 0 && orderCode.isNotEmpty()) { "Hay una orden incompleta o inválida." }
+            require(WorkOrderStatus.entries.any { it.name == status }) { "Estado de orden desconocido: $status" }
+            require(partsCost.isFinite() && laborCost.isFinite() && totalCost.isFinite()) { "Hay costos inválidos." }
+            require(partsCost >= 0.0 && laborCost >= 0.0 && totalCost >= 0.0) { "Los costos no pueden ser negativos." }
+            add(
+                WorkOrderEntity(
+                    id = id,
+                    clientId = clientId,
+                    orderCode = orderCode,
+                    deviceModel = json.optString("deviceModel"),
+                    serialNumber = json.optString("serialNumber"),
+                    reportedFault = json.optString("reportedFault"),
+                    technicalDiagnosis = json.optString("technicalDiagnosis", json.optString("diagnosis")),
+                    internalNotes = json.optString("internalNotes", json.optString("notes")),
+                    status = status,
+                    partsCost = partsCost,
+                    laborCost = laborCost,
+                    totalCost = totalCost,
+                    entryDate = json.optLong("entryDate", System.currentTimeMillis()),
+                    quotedDate = json.optionalLong("quotedDate"),
+                    deliveryDate = json.optionalLong("deliveryDate") ?: json.optionalLong("exitDate"),
+                    warrantyDays = json.optInt("warrantyDays", 90).coerceAtLeast(0),
+                    warrantyTerms = json.optString("warrantyTerms", WorkOrderEntity(0, clientId, orderCode, "", reportedFault = "").warrantyTerms),
+                    photosUris = json.optJSONArray("photosUris").toStringList(),
+                    signatureUri = json.optionalString("signatureUri")
                 )
             )
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+    }
+
+    private fun parseTransactions(array: JSONArray): List<FinancialTransaction> = buildList {
+        for (index in 0 until array.length()) {
+            val json = array.getJSONObject(index)
+            val type = json.optString("type", TransactionType.INCOME.name)
+            val amount = json.optDouble("amount", 0.0)
+            require(TransactionType.entries.any { it.name == type }) { "Tipo de movimiento desconocido: $type" }
+            require(amount.isFinite() && amount >= 0.0) { "Hay un movimiento con importe inválido." }
+            add(
+                FinancialTransaction(
+                    id = json.optLong("id", 0L),
+                    type = type,
+                    amount = amount,
+                    category = json.optString("category", "Otros"),
+                    description = json.optString("description"),
+                    date = json.optLong("date", System.currentTimeMillis()),
+                    relatedOrderId = json.optionalLong("relatedOrderId")
+                )
+            )
+        }
+    }
+
+    private fun parseTasks(array: JSONArray): List<WorkshopTask> = buildList {
+        for (index in 0 until array.length()) {
+            val json = array.getJSONObject(index)
+            add(
+                WorkshopTask(
+                    id = json.optLong("id", 0L),
+                    title = json.optString("title"),
+                    priority = json.optString("priority", "MEDIUM"),
+                    isCompleted = json.optBoolean("isCompleted", false),
+                    relatedConsole = json.optString("relatedConsole"),
+                    createdAt = json.optLong("createdAt", System.currentTimeMillis())
+                )
+            )
+        }
+    }
+
+    private fun parseSupplies(array: JSONArray): List<SupplyItem> = buildList {
+        for (index in 0 until array.length()) {
+            val json = array.getJSONObject(index)
+            val quantity = json.optInt("quantity", 1)
+            val price = json.optDouble("estimatedPrice", 0.0)
+            require(quantity > 0 && price.isFinite() && price >= 0.0) { "Hay un insumo inválido." }
+            add(
+                SupplyItem(
+                    id = json.optLong("id", 0L),
+                    name = json.optString("name"),
+                    category = json.optString("category", "Repuestos"),
+                    quantity = quantity,
+                    unit = json.optString("unit", "u"),
+                    isNeeded = json.optBoolean("isNeeded", true),
+                    estimatedPrice = price,
+                    supplier = json.optString("supplier")
+                )
+            )
+        }
+    }
+
+    private fun JSONObject.optionalLong(key: String): Long? =
+        if (has(key) && !isNull(key)) optLong(key) else null
+
+    private fun JSONObject.optionalString(key: String): String? =
+        if (has(key) && !isNull(key)) optString(key).takeIf { it.isNotBlank() } else null
+
+    private fun JSONArray?.toStringList(): List<String> {
+        if (this == null) return emptyList()
+        return List(length()) { index -> getString(index) }
     }
 
     suspend fun createShareBackupIntent(
@@ -289,7 +355,9 @@ object BackupManager {
         val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
         val fileName = "RetroStateRS_Backup_${dateFormat.format(Date())}.json"
 
-        val backupDir = File(context.cacheDir, "backups").apply { mkdirs() }
+        val backupDir = File(context.cacheDir, "backups").apply {
+            check(exists() || mkdirs()) { "No se pudo crear el directorio de respaldos." }
+        }
         val backupFile = File(backupDir, fileName)
         backupFile.writeText(jsonString, Charsets.UTF_8)
 
@@ -310,6 +378,8 @@ object BackupManager {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
-        Intent.createChooser(shareIntent, "Respaldar en la Nube (Drive / Correo / WhatsApp)")
+        Intent.createChooser(shareIntent, "Respaldar en la Nube (Drive / Correo / WhatsApp)").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
     }
 }

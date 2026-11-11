@@ -199,7 +199,7 @@ fun NewCrmOrderDialog(
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
-                    label = { Text("Teléfono / WhatsApp *") },
+                    label = { Text("Teléfono / WhatsApp") },
                     placeholder = { Text("ej. +54 9 11 4521-8899") },
                     leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = NeonCyan) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -225,6 +225,21 @@ fun NewCrmOrderDialog(
                         unfocusedBorderColor = ArcadeCardBorder
                     ),
                     modifier = Modifier.fillMaxWidth().testTag("input_address")
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = clientNotes,
+                    onValueChange = { clientNotes = it },
+                    label = { Text("Notas del Cliente") },
+                    placeholder = { Text("Preferencias, historial o aclaraciones") },
+                    maxLines = 2,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = NeonCyan,
+                        unfocusedBorderColor = ArcadeCardBorder
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("input_client_notes")
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))

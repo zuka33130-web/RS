@@ -21,11 +21,17 @@ interface FinancialTransactionDao {
     @Query("SELECT * FROM financial_transactions")
     suspend fun getAllTransactionsList(): List<FinancialTransaction>
 
+    @Query("SELECT * FROM financial_transactions WHERE relatedOrderId = :orderId LIMIT 1")
+    suspend fun getTransactionByOrderId(orderId: Long): FinancialTransaction?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransaction(transaction: FinancialTransaction): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTransactions(transactions: List<FinancialTransaction>)
+
+    @Update
+    suspend fun updateTransaction(transaction: FinancialTransaction)
 
     @Delete
     suspend fun deleteTransaction(transaction: FinancialTransaction)

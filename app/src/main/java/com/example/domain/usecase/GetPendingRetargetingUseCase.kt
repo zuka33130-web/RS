@@ -28,12 +28,10 @@ class GetPendingRetargetingUseCase(
 
                 val monthsSince = ChronoUnit.MONTHS.between(deliveryLocalDate, now).toInt()
 
-                // Si la consola fue entregada hace 1 mes o más (en entorno real 6 a 8 meses)
-                // Para testing en demo se incluyen entregadas con 1+ meses
-                if (monthsSince >= 1) {
+                if (monthsSince >= 6) {
                     RetargetingCandidate(
                         workOrderWithClient = item,
-                        monthsSinceDelivery = monthsSince.coerceAtLeast(6),
+                        monthsSinceDelivery = monthsSince,
                         suggestedAction = "Mantenimiento preventivo de pasta térmica, limpieza profunda de disipador y calibración."
                     )
                 } else {

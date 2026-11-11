@@ -28,6 +28,7 @@ data class QuotePdfData(
     val repairDetail: String = "",
     val finalCost: Double = 0.0,
     val quoteCode: String = "RS-PRE-001",
+    val warrantyDays: Int = 30,
     val date: Long = System.currentTimeMillis()
 )
 
@@ -55,10 +56,13 @@ object PdfGeneratorManager {
         val fileName = "Presupuesto_${cleanCode}_${System.currentTimeMillis()}.pdf"
         val pdfFile = File(quotesDir, fileName)
 
-        FileOutputStream(pdfFile).use { out ->
-            pdfDocument.writeTo(out)
+        try {
+            FileOutputStream(pdfFile).use { out ->
+                pdfDocument.writeTo(out)
+            }
+        } finally {
+            pdfDocument.close()
         }
-        pdfDocument.close()
 
         return pdfFile
     }
@@ -267,13 +271,15 @@ object PdfGeneratorManager {
         paint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
 
         // Mandatory exact legend requirement
-        val legalLegend = "Presupuesto válido sujeto a modificación según el precio actual de repuestos. Todas las reparaciones tienen garantía de 30 días."
-        canvas.drawText(legalLegend, 30f, footerY, paint)
+        val legalLegend = "Presupuesto válido sujeto a modificación según el precio actual de repuestos. Todas las reparaciones tienen garantía de ${data.warrantyDays} días."
+        wrapText(legalLegend, 105).forEachIndexed { index, line ->
+            canvas.drawText(line, 30f, footerY + index * 11f, paint)
+        }
 
         paint.color = textMuted
         paint.textSize = 8f
         paint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
-        canvas.drawText("Retro State RS • Laboratorio Especializado • CABA, Argentina", 30f, footerY + 14f, paint)
+        canvas.drawText("Retro State RS • Laboratorio Especializado • CABA, Argentina", 30f, footerY + 27f, paint)
     }
 
     private fun drawTextPair(
@@ -298,13 +304,13 @@ object PdfGeneratorManager {
     }
 
     private fun wrapText(text: String, maxCharsPerLine: Int): List<String> {
-        val words = text.split(" ")
+        val words = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         val lines = mutableListOf<String>()
         var currentLine = StringBuilder()
 
         for (word in words) {
             if (currentLine.length + word.length + 1 > maxCharsPerLine) {
-                lines.add(currentLine.toString())
+                if (currentLine.isNotEmpty()) lines.add(currentLine.toString())
                 currentLine = StringBuilder(word)
             } else {
                 if (currentLine.isNotEmpty()) currentLine.append(" ")

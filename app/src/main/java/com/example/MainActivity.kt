@@ -138,7 +138,6 @@ fun MainApp() {
     val navScreens = NavigationScreen.values()
 
     // Dialog & overlay states
-    var showNewOrderDialog by remember { mutableStateOf(false) }
     var showNewCrmOrderDialog by remember { mutableStateOf(false) }
     var showNewTransactionDialog by remember { mutableStateOf(false) }
     var transactionDialogInitialType by remember { mutableStateOf(TransactionType.INCOME) }
@@ -151,6 +150,7 @@ fun MainApp() {
 
     val supplies by dailyManagementViewModel.supplies.collectAsStateWithLifecycle()
     val neededSuppliesCount = supplies.count { it.isNeeded }
+    val allCrmOrders by workshopViewModel.allCrmOrders.collectAsStateWithLifecycle()
 
     // Centralized BackHandler pop logic
     BackHandler(enabled = !router.isTopTab || router.currentRoute !is AppRoute.Dashboard) {
@@ -290,17 +290,20 @@ fun MainApp() {
                     )
                 }
                 is AppRoute.OrderDetail -> {
+                    val currentOrder = allCrmOrders.firstOrNull {
+                        it.order.id == route.orderWithClient.order.id
+                    } ?: route.orderWithClient
                     OrderDetailScreen(
-                        orderWithClient = route.orderWithClient,
+                        orderWithClient = currentOrder,
                         onBack = { router.popBackStack() },
                         onUpdateStatus = { newStatus ->
-                            workshopViewModel.updateCrmOrderStatus(route.orderWithClient.order, newStatus)
+                            workshopViewModel.updateCrmOrderStatus(currentOrder.order, newStatus)
                         },
                         onUpdateCosts = { partsCost, laborCost, diagnosis ->
-                            workshopViewModel.updateCrmOrderCosts(route.orderWithClient.order, partsCost, laborCost, diagnosis)
+                            workshopViewModel.updateCrmOrderCosts(currentOrder.order, partsCost, laborCost, diagnosis)
                         },
                         onDeleteOrder = {
-                            workshopViewModel.deleteCrmOrder(route.orderWithClient.order)
+                            workshopViewModel.deleteCrmOrder(currentOrder.order)
                             router.popBackStack()
                         },
                         onOpenQuoteEditor = { orderToQuote ->
@@ -309,8 +312,11 @@ fun MainApp() {
                     )
                 }
                 is AppRoute.QuoteEditor -> {
+                    val currentOrder = route.orderWithClient?.let { routeOrder ->
+                        allCrmOrders.firstOrNull { it.order.id == routeOrder.order.id } ?: routeOrder
+                    }
                     QuoteEditorScreen(
-                        initialOrderWithClient = route.orderWithClient,
+                        initialOrderWithClient = currentOrder,
                         onBack = { router.popBackStack() }
                     )
                 }
@@ -399,6 +405,7 @@ fun MainApp() {
                     category = category,
                     quantity = quantity,
                     unit = unit,
+                    isNeeded = isNeeded,
                     estimatedPrice = estimatedPrice,
                     supplier = supplier
                 )

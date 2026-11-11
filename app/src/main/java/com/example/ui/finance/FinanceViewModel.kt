@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.model.FinancialTransaction
 import com.example.data.model.TransactionType
 import com.example.data.repository.WorkshopRepository
+import java.time.YearMonth
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,42 +16,80 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+const val PERIOD_THIS_MONTH = "ESTE_MES"
+const val PERIOD_PREVIOUS_MONTH = "MES_ANTERIOR"
+const val PERIOD_ALL = "TODOS"
+
 data class FinanceUiState(
     val transactions: List<FinancialTransaction> = emptyList(),
     val totalBalance: Double = 0.0,
     val monthlyIncome: Double = 0.0,
     val monthlyExpense: Double = 0.0,
-    val expensesByCategory: Map<String, Double> = emptyMap(),
+    val expensesByCategory: List<Pair<String, Double>> = emptyList(),
     val showBalance: Boolean = true,
-    val selectedPeriod: String = "Mes"
+    val selectedPeriod: String = PERIOD_THIS_MONTH,
+    val periodLabel: String = "Mes actual"
 )
+
+internal fun buildFinanceUiState(
+    allTransactions: List<FinancialTransaction>,
+    showBalance: Boolean,
+    period: String,
+    now: ZonedDateTime = ZonedDateTime.now()
+): FinanceUiState {
+    val selectedMonth = when (period) {
+        PERIOD_PREVIOUS_MONTH -> YearMonth.from(now).minusMonths(1)
+        else -> YearMonth.from(now)
+    }
+    val zone = ZoneId.systemDefault()
+    val filtered = if (period == PERIOD_ALL) {
+        allTransactions
+    } else {
+        allTransactions.filter { transaction ->
+            val transactionMonth = YearMonth.from(
+                java.time.Instant.ofEpochMilli(transaction.date).atZone(zone)
+            )
+            transactionMonth == selectedMonth
+        }
+    }
+
+    val income = filtered.filter { it.type == TransactionType.INCOME.name }.sumOf { it.amount }
+    val expense = filtered.filter { it.type == TransactionType.EXPENSE.name }.sumOf { it.amount }
+    val totalIncome = allTransactions.filter { it.type == TransactionType.INCOME.name }.sumOf { it.amount }
+    val totalExpense = allTransactions.filter { it.type == TransactionType.EXPENSE.name }.sumOf { it.amount }
+    val byCategory = filtered
+        .filter { it.type == TransactionType.EXPENSE.name }
+        .groupBy { it.category }
+        .map { (category, transactions) -> category to transactions.sumOf { it.amount } }
+        .sortedByDescending { it.second }
+
+    return FinanceUiState(
+        transactions = filtered,
+        totalBalance = totalIncome - totalExpense,
+        monthlyIncome = income,
+        monthlyExpense = expense,
+        expensesByCategory = byCategory,
+        showBalance = showBalance,
+        selectedPeriod = period,
+        periodLabel = when (period) {
+            PERIOD_PREVIOUS_MONTH -> "Mes anterior"
+            PERIOD_ALL -> "Todo el historial"
+            else -> "Mes actual"
+        }
+    )
+}
 
 class FinanceViewModel(private val repository: WorkshopRepository) : ViewModel() {
 
     private val _showBalance = MutableStateFlow(true)
-    private val _selectedPeriod = MutableStateFlow("Mes")
+    private val _selectedPeriod = MutableStateFlow(PERIOD_THIS_MONTH)
 
     val uiState: StateFlow<FinanceUiState> = combine(
         repository.allTransactions,
         _showBalance,
         _selectedPeriod
-    ) { txs, showBal, period ->
-        val income = txs.filter { it.type == TransactionType.INCOME.name }.sumOf { it.amount }
-        val expense = txs.filter { it.type == TransactionType.EXPENSE.name }.sumOf { it.amount }
-        val balance = income - expense
-        val byCategory = txs.filter { it.type == TransactionType.EXPENSE.name }
-            .groupBy { it.category }
-            .mapValues { entry -> entry.value.sumOf { it.amount } }
-
-        FinanceUiState(
-            transactions = txs,
-            totalBalance = balance,
-            monthlyIncome = income,
-            monthlyExpense = expense,
-            expensesByCategory = byCategory,
-            showBalance = showBal,
-            selectedPeriod = period
-        )
+    ) { transactions, showBalance, period ->
+        buildFinanceUiState(transactions, showBalance, period)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FinanceUiState())
 
     fun toggleBalanceVisibility() {
@@ -56,13 +97,21 @@ class FinanceViewModel(private val repository: WorkshopRepository) : ViewModel()
     }
 
     fun setPeriod(period: String) {
-        _selectedPeriod.value = period
+        if (period in setOf(PERIOD_THIS_MONTH, PERIOD_PREVIOUS_MONTH, PERIOD_ALL)) {
+            _selectedPeriod.value = period
+        }
     }
 
     fun addTransaction(type: TransactionType, amount: Double, category: String, description: String) {
+        if (!amount.isFinite() || amount <= 0.0 || category.isBlank()) return
         viewModelScope.launch {
             repository.insertTransaction(
-                FinancialTransaction(type = type.name, amount = amount, category = category, description = description)
+                FinancialTransaction(
+                    type = type.name,
+                    amount = amount,
+                    category = category.trim(),
+                    description = description.trim()
+                )
             )
         }
     }

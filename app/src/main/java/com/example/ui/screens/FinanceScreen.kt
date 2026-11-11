@@ -439,7 +439,7 @@ fun MonthlySummaryRow(
                     color = PixelGreen1UP
                 )
                 Text(
-                    text = "Mes actual",
+                    text = uiState.periodLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = RetroMuted,
                     fontSize = 10.sp
@@ -487,7 +487,7 @@ fun MonthlySummaryRow(
                     color = PixelRedHeart
                 )
                 Text(
-                    text = "Mes actual",
+                    text = uiState.periodLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = RetroMuted,
                     fontSize = 10.sp

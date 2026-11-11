@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.data.AppDatabase
 import com.example.data.model.ClientEntity
 import com.example.data.model.ClientWithOrders
@@ -54,9 +55,21 @@ class WorkshopRepository(private val database: AppDatabase) {
         status: WorkOrderStatus = WorkOrderStatus.TO_CHECK,
         photosUris: List<String> = emptyList(),
         signatureUri: String? = null
-    ): WorkOrderEntity {
+    ): WorkOrderEntity = database.withTransaction {
+        require(firstName.isNotBlank()) { "El nombre del cliente es obligatorio" }
+        require(deviceModel.isNotBlank()) { "El modelo del equipo es obligatorio" }
+        require(reportedFault.isNotBlank()) { "La falla reportada es obligatoria" }
+        require(partsCost.isFinite() && laborCost.isFinite() && partsCost >= 0.0 && laborCost >= 0.0) {
+            "Los costos deben ser importes válidos"
+        }
+
         val cleanPhone = phone.trim()
-        val existingClient = if (cleanPhone.isNotBlank()) clientDao.findClientByPhone(cleanPhone) else null
+        val normalizedPhone = normalizePhone(cleanPhone)
+        val existingClient = if (normalizedPhone.isNotEmpty()) {
+            clientDao.getAllClientsList().firstOrNull { normalizePhone(it.phone) == normalizedPhone }
+        } else {
+            null
+        }
         val clientId = existingClient?.id ?: run {
             val newClient = ClientEntity(
                 firstName = firstName.trim().ifBlank { "Cliente" },
@@ -68,9 +81,10 @@ class WorkshopRepository(private val database: AppDatabase) {
             clientDao.insertClient(newClient)
         }
 
-        val totalOrdersCount = workOrderDao.getOrderCount() + 1
         val codeYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-        val orderCode = "RS-$codeYear-%04d".format(totalOrdersCount)
+        val codePrefix = "RS-$codeYear-"
+        val nextOrderNumber = workOrderDao.getNextOrderNumber(codePrefix)
+        val orderCode = "$codePrefix%04d".format(nextOrderNumber)
 
         val total = partsCost + laborCost
         val order = WorkOrderEntity(
@@ -89,10 +103,10 @@ class WorkshopRepository(private val database: AppDatabase) {
             signatureUri = signatureUri
         )
         val orderId = workOrderDao.insertOrder(order)
-        return order.copy(id = orderId)
+        order.copy(id = orderId)
     }
 
-    suspend fun updateWorkOrderStatus(order: WorkOrderEntity, newStatus: WorkOrderStatus) {
+    suspend fun updateWorkOrderStatus(order: WorkOrderEntity, newStatus: WorkOrderStatus) = database.withTransaction {
         val now = System.currentTimeMillis()
         val updated = order.copy(
             status = newStatus.name,
@@ -101,7 +115,9 @@ class WorkshopRepository(private val database: AppDatabase) {
         )
         workOrderDao.updateOrder(updated)
 
-        if (newStatus == WorkOrderStatus.DELIVERED && updated.totalCost > 0) {
+        if (newStatus == WorkOrderStatus.DELIVERED && updated.totalCost > 0 &&
+            transactionDao.getTransactionByOrderId(order.id) == null
+        ) {
             val tx = FinancialTransaction(
                 type = TransactionType.INCOME.name,
                 amount = updated.totalCost,
@@ -119,16 +135,24 @@ class WorkshopRepository(private val database: AppDatabase) {
         partsCost: Double,
         laborCost: Double,
         diagnosis: String = order.technicalDiagnosis
-    ) {
+    ) = database.withTransaction {
+        require(partsCost.isFinite() && laborCost.isFinite() && partsCost >= 0.0 && laborCost >= 0.0) {
+            "Los costos deben ser importes válidos"
+        }
         val total = partsCost + laborCost
         val updated = order.copy(
             partsCost = partsCost,
             laborCost = laborCost,
             totalCost = total,
-            technicalDiagnosis = diagnosis,
+            technicalDiagnosis = diagnosis.trim(),
             quotedDate = if (order.quotedDate == null) System.currentTimeMillis() else order.quotedDate
         )
         workOrderDao.updateOrder(updated)
+
+        // Si la orden ya fue cobrada, el movimiento asociado debe reflejar el nuevo total.
+        transactionDao.getTransactionByOrderId(order.id)?.let { transaction ->
+            transactionDao.updateTransaction(transaction.copy(amount = total))
+        }
     }
 
     suspend fun updateWorkOrder(order: WorkOrderEntity) {
@@ -175,25 +199,32 @@ class WorkshopRepository(private val database: AppDatabase) {
     }
 
     // --- Backup & Restore Sync Access ---
+    suspend fun getAllClientsSync(): List<ClientEntity> = clientDao.getAllClientsList()
     suspend fun getAllOrdersSync(): List<WorkOrderEntity> = workOrderDao.getAllOrdersList()
     suspend fun getAllTransactionsSync(): List<FinancialTransaction> = transactionDao.getAllTransactionsList()
     suspend fun getAllTasksSync(): List<WorkshopTask> = taskDao.getAllTasksList()
     suspend fun getAllSuppliesSync(): List<SupplyItem> = supplyDao.getAllSuppliesList()
 
     suspend fun restoreAllData(
+        clients: List<ClientEntity>,
         orders: List<WorkOrderEntity>,
         transactions: List<FinancialTransaction>,
         tasks: List<WorkshopTask>,
         supplies: List<SupplyItem>
-    ) {
+    ) = database.withTransaction {
+        // La transacción evita dejar una base parcialmente restaurada si algo falla.
         workOrderDao.deleteAllOrders()
         transactionDao.deleteAllTransactions()
         taskDao.deleteAllTasks()
         supplyDao.deleteAllSupplies()
+        clientDao.deleteAllClients()
 
+        if (clients.isNotEmpty()) clientDao.insertClients(clients)
         if (orders.isNotEmpty()) workOrderDao.insertOrders(orders)
         if (transactions.isNotEmpty()) transactionDao.insertTransactions(transactions)
         if (tasks.isNotEmpty()) taskDao.insertTasks(tasks)
         if (supplies.isNotEmpty()) supplyDao.insertSupplies(supplies)
     }
+
+    private fun normalizePhone(phone: String): String = phone.filter { it.isDigit() }
 }

@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 
 data class TaskUiState(
     val tasks: List<WorkshopTask> = emptyList(),
-    val taskFilter: String = "TODAS",
+    val taskFilter: String = "ALL",
     val pendingTasksCount: Int = 0,
     val highPriorityTasksCount: Int = 0,
     val completedTasksCount: Int = 0
@@ -25,15 +25,15 @@ data class TaskUiState(
 
 data class ShoppingListUiState(
     val shoppingList: List<SupplyItem> = emptyList(),
-    val shoppingFilter: String = "TODOS",
+    val shoppingFilter: String = "ALL",
     val neededSuppliesCount: Int = 0,
     val inStockSuppliesCount: Int = 0
 )
 
 class DailyManagementViewModel(private val repository: WorkshopRepository) : ViewModel() {
 
-    private val _taskFilter = MutableStateFlow("TODAS")
-    private val _shoppingFilter = MutableStateFlow("TODOS")
+    private val _taskFilter = MutableStateFlow("ALL")
+    private val _shoppingFilter = MutableStateFlow("ALL")
 
     val tasks: StateFlow<List<WorkshopTask>> = repository.allTasks
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -46,9 +46,9 @@ class DailyManagementViewModel(private val repository: WorkshopRepository) : Vie
         _taskFilter
     ) { allTasks, filter ->
         val filtered = when (filter) {
-            "PENDIENTES" -> allTasks.filter { !it.isCompleted }
-            "ALTA" -> allTasks.filter { it.priority == TaskPriority.HIGH.name && !it.isCompleted }
-            "COMPLETADAS" -> allTasks.filter { it.isCompleted }
+            "PENDING" -> allTasks.filter { !it.isCompleted }
+            "HIGH" -> allTasks.filter { it.priority == TaskPriority.HIGH.name && !it.isCompleted }
+            "COMPLETED" -> allTasks.filter { it.isCompleted }
             else -> allTasks
         }
         TaskUiState(
@@ -65,8 +65,8 @@ class DailyManagementViewModel(private val repository: WorkshopRepository) : Vie
         _shoppingFilter
     ) { allSupplies, filter ->
         val filtered = when (filter) {
-            "FALTANTES" -> allSupplies.filter { it.isNeeded }
-            "EN_STOCK" -> allSupplies.filter { !it.isNeeded }
+            "NEEDED" -> allSupplies.filter { it.isNeeded }
+            "BOUGHT" -> allSupplies.filter { !it.isNeeded }
             else -> allSupplies
         }
         ShoppingListUiState(
@@ -105,15 +105,36 @@ class DailyManagementViewModel(private val repository: WorkshopRepository) : Vie
         viewModelScope.launch { repository.deleteTask(task) }
     }
     
-    fun addShoppingItem(name: String, category: String, quantity: Int, unit: String, estimatedPrice: Double, supplier: String) {
+    fun addShoppingItem(
+        name: String,
+        category: String,
+        quantity: Int,
+        unit: String,
+        isNeeded: Boolean = true,
+        estimatedPrice: Double,
+        supplier: String
+    ) {
+        if (name.isBlank() || category.isBlank() || unit.isBlank() || quantity <= 0 || !estimatedPrice.isFinite() || estimatedPrice < 0.0) return
         viewModelScope.launch {
-            repository.insertSupply(SupplyItem(name = name, category = category, quantity = quantity, unit = unit, estimatedPrice = estimatedPrice, supplier = supplier))
+            repository.insertSupply(
+                SupplyItem(
+                    name = name.trim(),
+                    category = category.trim(),
+                    quantity = quantity,
+                    unit = unit.trim(),
+                    isNeeded = isNeeded,
+                    estimatedPrice = estimatedPrice,
+                    supplier = supplier.trim()
+                )
+            )
         }
     }
 
-    fun quickAddPresetSupply(name: String, category: String, estimatedPrice: Double) {
+    fun quickAddPresetSupply(name: String, category: String = "Consumibles", estimatedPrice: Double = 0.0) {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return
         viewModelScope.launch {
-            repository.insertSupply(SupplyItem(name = name, category = category, quantity = 1, unit = "u", estimatedPrice = estimatedPrice, isNeeded = true))
+            repository.insertSupply(SupplyItem(name = cleanName, category = category, quantity = 1, unit = "u", estimatedPrice = estimatedPrice, isNeeded = true))
         }
     }
 

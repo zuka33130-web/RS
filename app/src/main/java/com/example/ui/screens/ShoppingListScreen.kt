@@ -102,7 +102,7 @@ fun ShoppingListScreen(
     viewModel: DailyManagementViewModel,
     onOpenDetailedDialog: () -> Unit = {}
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val uiState by viewModel.shoppingUiState.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     var quickInputText by remember { mutableStateOf("") }
 

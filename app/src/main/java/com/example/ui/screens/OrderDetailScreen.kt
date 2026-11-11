@@ -767,6 +767,11 @@ fun OrderDetailScreen(
         var partsInput by remember { mutableStateOf(if (order.partsCost > 0) order.partsCost.toString() else "") }
         var laborInput by remember { mutableStateOf(if (order.laborCost > 0) order.laborCost.toString() else "") }
         var diagnosisInput by remember { mutableStateOf(order.technicalDiagnosis) }
+        val partsCost = partsInput.replace(',', '.').toDoubleOrNull() ?: 0.0
+        val laborCost = laborInput.replace(',', '.').toDoubleOrNull() ?: 0.0
+        val areCostsValid = listOf(partsInput, laborInput).all { input ->
+            input.isBlank() || input.replace(',', '.').toDoubleOrNull()?.let { it.isFinite() && it >= 0.0 } == true
+        }
 
         AlertDialog(
             onDismissRequest = { showEditCostsDialog = false },
@@ -791,7 +796,7 @@ fun OrderDetailScreen(
                         value = partsInput,
                         onValueChange = { partsInput = it },
                         label = { Text("Costo Repuestos ($)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = NeonMagenta,
                             unfocusedBorderColor = ArcadeCardBorder
@@ -804,7 +809,7 @@ fun OrderDetailScreen(
                         value = laborInput,
                         onValueChange = { laborInput = it },
                         label = { Text("Mano de Obra ($)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = NeonCyan,
                             unfocusedBorderColor = ArcadeCardBorder
@@ -829,11 +834,10 @@ fun OrderDetailScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val pCost = partsInput.toDoubleOrNull() ?: 0.0
-                        val lCost = laborInput.toDoubleOrNull() ?: 0.0
-                        onUpdateCosts(pCost, lCost, diagnosisInput)
+                        onUpdateCosts(partsCost, laborCost, diagnosisInput)
                         showEditCostsDialog = false
                     },
+                    enabled = areCostsValid,
                     colors = ButtonDefaults.buttonColors(containerColor = RetroGoldCoin, contentColor = Color.Black),
                     modifier = Modifier.testTag("btn_save_costs")
                 ) {

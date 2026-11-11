@@ -35,6 +35,9 @@ interface ClientDao {
     @Query("SELECT * FROM crm_clients WHERE phone = :phone LIMIT 1")
     suspend fun findClientByPhone(phone: String): ClientEntity?
 
+    @Query("SELECT * FROM crm_clients")
+    suspend fun getAllClientsList(): List<ClientEntity>
+
     @Query("SELECT * FROM crm_clients ORDER BY lastName ASC, firstName ASC")
     fun getAllClients(): Flow<List<ClientEntity>>
 
@@ -98,6 +101,9 @@ interface WorkOrderDao {
 
     @Query("SELECT COUNT(*) FROM work_orders")
     suspend fun getOrderCount(): Int
+
+    @Query("SELECT COALESCE(MAX(CAST(substr(orderCode, LENGTH(:prefix) + 1) AS INTEGER)), 0) + 1 FROM work_orders WHERE orderCode LIKE :prefix || '%'")
+    suspend fun getNextOrderNumber(prefix: String): Int
 
     @Query("SELECT * FROM work_orders")
     suspend fun getAllOrdersList(): List<WorkOrderEntity>

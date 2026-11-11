@@ -1,22 +1,42 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Retro State RS
 
-# Run and deploy your AI Studio app
+Aplicación Android para gestionar un taller de reparación de consolas: órdenes y clientes, presupuestos en PDF, finanzas, tareas, inventario, estadísticas y copias de seguridad locales.
 
-This contains everything you need to run your app locally.
+## Requisitos
 
-View your app in AI Studio: https://ai.studio/apps/7497b023-7bc7-4728-9c72-75b6c0ae289c
+- Android Studio con JDK 21.
+- Android SDK 36.1 (el proyecto usa `minSdk 24` y `targetSdk 36`).
+- No hace falta configurar Gemini ni Firebase para ejecutar la versión actual.
 
-## Run Locally
+## Abrir y ejecutar
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+1. Abrí este directorio en Android Studio y esperá la sincronización de Gradle.
+2. Ejecutá la configuración **app** en un emulador o dispositivo con Android 7.0 o superior.
 
+Desde una terminal también podés compilar y probar el proyecto:
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
-7. If you have already published your app in AI Studio, please [request upload key reset](https://support.google.com/googleplay/android-developer/answer/9842756#zippy=%2Crequest-an-upload-key-reset) in Google Play Console.
+```bash
+./gradlew testDebugUnitTest
+./gradlew assembleDebug
+```
+
+El APK de depuración queda en `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Firma de una versión release
+
+La compilación release puede generarse sin firma. Para firmarla, definí estas variables de entorno antes de ejecutar `./gradlew assembleRelease`:
+
+- `KEYSTORE_PATH`: ruta al archivo JKS.
+- `STORE_PASSWORD`: contraseña del almacén.
+- `KEY_PASSWORD`: contraseña de la clave.
+- `KEY_ALIAS` (opcional): alias; por defecto se usa `upload`.
+
+Las credenciales no deben agregarse al repositorio.
+
+## Datos y respaldos
+
+La información se guarda localmente con Room. Desde **Ajustes** se puede exportar, compartir y restaurar una copia JSON. La restauración reemplaza los datos actuales solo después de validar el archivo y se ejecuta dentro de una transacción para evitar restauraciones parciales.
+
+## Verificación continua
+
+El workflow **Android CI** ejecuta las pruebas unitarias y compila el APK de depuración en cada push y pull request.
